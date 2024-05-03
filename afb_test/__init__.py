@@ -4,6 +4,7 @@ import traceback
 import unittest
 
 from contextlib import contextmanager
+from typing import Optional
 
 import libafb
 
@@ -11,12 +12,22 @@ _binder = None
 
 
 class AFBTestCase(unittest.TestCase):
-    """A base class for an AFB unit test. It makes sure the binder exists through self.binder and offers some helper methods"""
-    
-    def __init__(self, *args):
+    """A base class for an AFB unit test. It makes sure the binder
+    exists through self.binder and offers some helper methods"""
+
+    def run(self, result=None):
+        """Makes sure each test is launched in the main event loop"""
         global _binder
-        super().__init__(*args)
         self.binder = _binder
+
+        def _cb(binder, _):
+            # call the actual test method
+            unittest.TestCase.run(self, result)
+
+            # aborts the loop
+            return 1
+
+        libafb.loopstart(_binder, _cb, None)
 
     @contextmanager
     def assertEventEmitted(self, api: str, event_name: str):
@@ -79,20 +90,10 @@ class TAPTestRunner:
 
 class AFBTestProgram(unittest.TestProgram):
     """Main test program
-    
+
     It allows us to add new command line arguments to the default ones
     provided by unittest.
-
-    It also changes a bit the behaviour of a test program so that actual
-    tests are not launched before we get our main event loop running.
-    And because this event loop is blocking we are forced to hack things
-    a bit here ... So methods that are called by the constructor and
-    would run tests immediately are here modified to do nothing. And
-    they are called again in the callback of the main loop
     """
-    def __init__(self, *args, **kwargs):
-        # force exit=False
-        super().__init__(*args, **kwargs, exit=False)
 
     def _getParentArgParser(self):
         parser = super()._getParentArgParser()
@@ -109,53 +110,44 @@ class AFBTestProgram(unittest.TestProgram):
         )
         return parser
 
-    def createTests(self, *args, **kwargs):
-        """Overload of createTests. By default, it will do nothing,
-        except if a new parameter 'in_afb_loop' is set to True"""
 
-        if kwargs.get("in_afb_loop", False):
-            del kwargs["in_afb_loop"]
-            return super().createTests(*args, **kwargs)
-
-    def runTests(self, in_afb_loop=False):
-        """Overload of runTests. By default, it will do nothing,
-        except if a new parameter 'in_afb_loop' is set to True"""
-
-        if in_afb_loop:
-            if self.tap_format:
-                self.testRunner = TAPTestRunner()
-            return super().runTests()
-
-
-def _on_binder_init(binder, tp):
-    # Call again methods that create and run tests
-    tp.createTests(in_afb_loop=True)
-    tp.runTests(in_afb_loop=True)
-
-    # exits the event loop now
-    return 1
-
-
-def run_afb_binding_tests(bindings: dict):
+def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
+    """Main test function to be called in __main__"""
     global _binder
-    # tp is created first so that CLI argument are parsed first, and
-    # some (e.g. --help) may exit here before the main loop is started
+
     tp = AFBTestProgram()
+
+    configure_afb_binding_tests(bindings, config, tp.path)
+
+    tp.runTests()
+
+
+def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, path: Optional[str] = None):
+    """Configuration function to be called when tests are set up.
+    
+    When unittest is launched with python -m unittest, the only way to
+    pass it options is through the use of environment variables.
+    BINDING_PATH is then used here to point to the path where bindings'
+    .so files are located"""
+    global _binder
 
     _binder = libafb.binder(
         {
             "uid": "py-binder",
             "verbose": 255,
             "rootdir": ".",
+            "set": config or {},
+            # do not open a listening TCP socket for tests
+            "port": 0,
         }
     )
+
+    so_path = os.environ.get("BINDING_PATH","") or path or ""
 
     for binding_uid, path in bindings.items():
         libafb.binding(
             {
                 "uid": binding_uid,
-                "path": os.path.join(tp.so_path or "", path),
+                "path": os.path.join(so_path, path),
             }
         )
-
-    libafb.loopstart(_binder, _on_binder_init, tp)
