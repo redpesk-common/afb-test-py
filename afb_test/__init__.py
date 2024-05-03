@@ -127,8 +127,8 @@ def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, p
     
     When unittest is launched with python -m unittest, the only way to
     pass it options is through the use of environment variables.
-    BINDING_PATH is then used here to point to the path where bindings'
-    .so files are located"""
+    TEST_BINDING_PATH is then used here to point to the path where
+    bindings' .so files are located"""
     global _binder
 
     _binder = libafb.binder(
@@ -142,7 +142,7 @@ def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, p
         }
     )
 
-    so_path = os.environ.get("BINDING_PATH","") or path or ""
+    so_path = os.environ.get("TEST_BINDING_PATH","") or path or ""
 
     for binding_uid, path in bindings.items():
         libafb.binding(
