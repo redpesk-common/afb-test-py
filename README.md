@@ -15,7 +15,7 @@ The `AFBTestCase` provides a `unittest.TestCase` class with:
 
 The function `configure_afb_binding_tests` will create the global binder and load bindings. It is possible to pass a configuration for a binding through the `config` parameter.
 
-The function `run_afb_binding_tests` is to be used when tests are launched as a main. It offers additional command line arguments to specify a path for binding .so files or the TAP format for formatting test outputs
+The function `run_afb_binding_tests` is to be used when tests are launched in the `__main__` function. It offers additional command line arguments to specify a path for binding .so files or the TAP format for formatting test outputs.
 
 ## Minimal example
 
@@ -50,8 +50,8 @@ if __name__ == "__main__":
 **Only available through direct invocation**, not through `python -m unittest`
 
 - `--tap`: output test results in [TAP](https://testanything.org/) format
-- `--path <path>`: sepcifies a path to look for binding's .so files
+- `--path <path>`: specifies a path to look for binding's .so files
 
-## Environement variables
+## Environment variables
 
-- `TEST_BINDING_PATH`: this variable can be used to specify the path where binding's .so files are searched for. The environment variable is the only to specify such path when tests are launched through the `unittest` module (e.g. `python -m unittest`).
+- `TEST_BINDING_PATH`: this variable can be used to specify the path where binding's .so files are searched for. The environment variable is the only one to specify such path when tests are launched through the `unittest` module (e.g. `python -m unittest`).
