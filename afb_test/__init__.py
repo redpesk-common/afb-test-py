@@ -109,6 +109,10 @@ class AFBTestProgram(unittest.TestProgram):
             help="Path where bindings' .so files are looking for",
         )
         return parser
+    
+    def runTests(self, skip=True) -> None:
+        if not skip:
+            return super().runTests()
 
 
 def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
@@ -117,9 +121,9 @@ def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
 
     tp = AFBTestProgram()
 
-    configure_afb_binding_tests(bindings, config, tp.path)
+    configure_afb_binding_tests(bindings, config, tp.so_path)
 
-    tp.runTests()
+    tp.runTests(skip=False)
 
 
 def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, path: Optional[str] = None):
@@ -130,6 +134,10 @@ def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, p
     TEST_BINDING_PATH is then used here to point to the path where
     bindings' .so files are located"""
     global _binder
+
+    # We cannot have more than one binder
+    if _binder:
+        return
 
     _binder = libafb.binder(
         {
