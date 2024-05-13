@@ -119,7 +119,7 @@ def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
     """Main test function to be called in __main__"""
     global _binder
 
-    tp = AFBTestProgram()
+    tp = AFBTestProgram(testRunner=TAPTestRunner() if "--tap" in sys.argv else None)
 
     configure_afb_binding_tests(bindings, config, tp.so_path)
 
