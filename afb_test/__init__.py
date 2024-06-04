@@ -103,11 +103,6 @@ class AFBTestProgram(unittest.TestProgram):
             dest="tap_format",
             help="Use TAP as output format",
         )
-        parser.add_argument(
-            "--path",
-            dest="so_path",
-            help="Path where bindings' .so files are looking for",
-        )
         return parser
     
     def runTests(self, skip=True) -> None:
@@ -121,18 +116,14 @@ def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
 
     tp = AFBTestProgram(testRunner=TAPTestRunner() if "--tap" in sys.argv else None)
 
-    configure_afb_binding_tests(bindings, config, tp.so_path)
+    configure_afb_binding_tests(bindings, config)
 
     tp.runTests(skip=False)
 
 
-def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, path: Optional[str] = None):
-    """Configuration function to be called when tests are set up.
+def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
+    """Configuration function to be called when tests are set up."""
     
-    When unittest is launched with python -m unittest, the only way to
-    pass it options is through the use of environment variables.
-    TEST_BINDING_PATH is then used here to point to the path where
-    bindings' .so files are located"""
     global _binder
 
     # We cannot have more than one binder
@@ -150,12 +141,11 @@ def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None, p
         }
     )
 
-    so_path = os.environ.get("TEST_BINDING_PATH","") or path or ""
-
     for binding_uid, path in bindings.items():
         libafb.binding(
             {
                 "uid": binding_uid,
-                "path": os.path.join(so_path, path),
+                # Defining LD_LIBRARY_PATH might be needed to find .so files
+                "path": path,
             }
         )

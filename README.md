@@ -50,8 +50,11 @@ if __name__ == "__main__":
 **Only available through direct invocation**, not through `python -m unittest`
 
 - `--tap`: output test results in [TAP](https://testanything.org/) format
-- `--path <path>`: specifies a path to look for binding's .so files
 
 ## Environment variables
 
-- `TEST_BINDING_PATH`: this variable can be used to specify the path where binding's .so files are searched for. The environment variable is the only one to specify such path when tests are launched through the `unittest` module (e.g. `python -m unittest`).
+Bindings' `.so` files are searched for in the current system library
+path. Additional paths might be added by setting the `LD_LIBRARY_PATH`
+environment variable, e.g.:
+
+`LD_LIBRARY_PATH=./build python -m unittest`
