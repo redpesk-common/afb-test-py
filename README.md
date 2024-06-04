@@ -24,7 +24,7 @@ from afb_test import AFBTestCase, configure_afb_binding_tests, run_afb_binding_t
 
 import libafb
 
-bindings = {"mybinding": f"mybinding.so"}
+bindings = {"mybinding": "mybinding.so"}
 
 def setUpModule():
     configure_afb_binding_tests(
