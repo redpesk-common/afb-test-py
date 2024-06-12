@@ -38,12 +38,14 @@ class AFBTestCase(unittest.TestCase):
             nonlocal evt_received
             evt_received = True
 
-        handler = libafb.evthandler(
+        libafb.evthandler(
             self.binder,
-            {"uid": api, "pattern": f"{api}/{event_name}", "callback": on_evt},
+            {"pattern": f"{api}/{event_name}", "callback": on_evt},
         )
 
         yield
+
+        libafb.evtdelete(self.binder, f"{api}/{event_name}")
 
         assert evt_received
 
@@ -105,7 +107,7 @@ class AFBTestProgram(unittest.TestProgram):
             help="Use TAP as output format",
         )
         return parser
-    
+
     def runTests(self, skip=True) -> None:
         if not skip:
             return super().runTests()
@@ -124,7 +126,7 @@ def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
 
 def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
     """Configuration function to be called when tests are set up."""
-    
+
     global _binder
 
     # We cannot have more than one binder
