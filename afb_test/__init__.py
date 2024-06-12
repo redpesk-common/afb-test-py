@@ -74,6 +74,7 @@ class TAPTestResult(unittest.result.TestResult):
         traceback.print_exception(exc_type, exc, tb, file=self.stream)
         self.stream.flush()
         self.test_n += 1
+        super().addError(test, err)
 
     def addFailure(self, test, err):
         self.addError(test, err)
