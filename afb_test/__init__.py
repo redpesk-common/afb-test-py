@@ -30,8 +30,9 @@ class AFBTestCase(unittest.TestCase):
         libafb.loopstart(_binder, _cb, None)
 
     @contextmanager
-    def assertEventEmitted(self, api: str, event_name: str):
+    def assertEventEmitted(self, api: str, event_name: str, timeout_ms: int = 100):
         """Helper context manager that allows to easily test that an event has been effectively called"""
+        import time
         evt_received = False
 
         def on_evt(*args):
@@ -44,6 +45,11 @@ class AFBTestCase(unittest.TestCase):
         )
 
         yield
+
+        elapsed = 0
+        while elapsed <= timeout_ms and not evt_received:
+            elapsed += 10
+            time.sleep(0.01)
 
         libafb.evtdelete(self.binder, f"{api}/{event_name}")
 
