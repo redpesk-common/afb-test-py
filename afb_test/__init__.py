@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import traceback
@@ -8,7 +9,54 @@ from typing import Optional
 
 import libafb
 
-_binder = None
+_binder_config = {}
+_bindings = {}
+
+
+def serialize_test_case_result(result: unittest.TestResult):
+    """Serialize a TestResult into a JSON-dumpable dict."""
+
+    # TestResult stores errors and failures as tuple of the form
+    # (test_case, error_string) where test_case is the instance of the
+    # TestCase. This is not serializable as is, but we assume the
+    # unserialization part knows which test case it is.
+    return {
+        "failfast": result.failfast,
+        "failures": [f[1] for f in result.failures],
+        "errors": [f[1] for f in result.errors],
+        "testsRun": result.testsRun,
+        "skipped": bool(len(result.skipped)),
+        "expectedFailures": [f[1] for f in result.expectedFailures],
+        "unexpectedSuccesses": bool(len(result.unexpectedSuccesses)),
+        "shouldStop": result.shouldStop,
+        "buffer": result.buffer,
+        "tb_locals": result.tb_locals,
+        "_mirrorOutput": result._mirrorOutput,
+    }
+
+
+def unserialize_in_result(
+    result: unittest.TestResult, result_json, test_case: unittest.TestCase
+):
+    for attr in (
+        "failfast",
+        "testsRun",
+        "shouldStop",
+        "buffer",
+        "tb_locals",
+        "_mirrorOutput",
+    ):
+        setattr(result, attr, result_json[attr])
+
+    result.failures += [(test_case, err) for err in result_json["failures"]]
+    result.errors += [(test_case, err) for err in result_json["errors"]]
+    result.expectedFailures += [
+        (test_case, err) for err in result_json["expectedFailures"]
+    ]
+    result.unexpectedSuccesses += (
+        [test_case] if result_json["unexpectedSuccesses"] else []
+    )
+    result.skipped += [test_case] if result_json["skipped"] else []
 
 
 class AFBTestCase(unittest.TestCase):
@@ -17,22 +65,69 @@ class AFBTestCase(unittest.TestCase):
 
     def run(self, result=None):
         """Makes sure each test is launched in the main event loop"""
-        global _binder
-        self.binder = _binder
+        global _binder_config, _bindings
+        self._result = None
 
         def _cb(binder, _):
             # call the actual test method
             unittest.TestCase.run(self, result)
+            self._result = result
 
             # aborts the loop
             return 1
 
-        libafb.loopstart(_binder, _cb, None)
+        # afb-binder is not designed to have an event loop started,
+        # then stopped, then started for each test. We then fork() for
+        # each test and create a binder and an event loop each time
+
+        pipe_r, pipe_w = os.pipe()
+
+        pid = os.fork()
+        if pid == 0:
+            # child
+            os.close(pipe_r)
+            _binder = libafb.binder(
+                {
+                    "uid": "py-binder",
+                    "verbose": 255,
+                    "rootdir": ".",
+                    "set": _binder_config or {},
+                    # do not open a listening TCP socket for tests
+                    "port": 0,
+                }
+            )
+
+            for binding_uid, path in _bindings.items():
+                libafb.binding(
+                    {
+                        "uid": binding_uid,
+                        # Defining LD_LIBRARY_PATH might be needed to find .so files
+                        "path": path,
+                    }
+                )
+
+            self.binder = _binder
+
+            r = libafb.loopstart(_binder, _cb, None)
+
+            os.write(
+                pipe_w,
+                json.dumps(serialize_test_case_result(self._result)).encode("utf-8"),
+            )
+            os.close(pipe_w)
+            sys.exit(r)
+        else:
+            os.close(pipe_w)
+            pipe_r = os.fdopen(pipe_r)
+            unserialize_in_result(result, json.loads(pipe_r.read()), self)
+            pipe_r.close()
+            os.waitpid(pid, 0)
 
     @contextmanager
     def assertEventEmitted(self, api: str, event_name: str, timeout_ms: int = 100):
         """Helper context manager that allows to easily test that an event has been effectively called"""
         import time
+
         evt_received = False
 
         def on_evt(*args):
@@ -133,28 +228,8 @@ def run_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
 def configure_afb_binding_tests(bindings: dict, config: Optional[dict] = None):
     """Configuration function to be called when tests are set up."""
 
-    global _binder
+    global _binder_config
+    global _bindings
 
-    # We cannot have more than one binder
-    if _binder:
-        return
-
-    _binder = libafb.binder(
-        {
-            "uid": "py-binder",
-            "verbose": 255,
-            "rootdir": ".",
-            "set": config or {},
-            # do not open a listening TCP socket for tests
-            "port": 0,
-        }
-    )
-
-    for binding_uid, path in bindings.items():
-        libafb.binding(
-            {
-                "uid": binding_uid,
-                # Defining LD_LIBRARY_PATH might be needed to find .so files
-                "path": path,
-            }
-        )
+    _bindings = bindings
+    _binder_config = config
