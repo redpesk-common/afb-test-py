@@ -12,6 +12,11 @@ import libafb
 _binder_config = {}
 _bindings = {}
 
+_UNSET = object()
+
+class EventAssertionError(AssertionError):
+    pass
+
 
 def serialize_test_case_result(result: unittest.TestResult):
     """Serialize a TestResult into a JSON-dumpable dict."""
@@ -124,31 +129,54 @@ class AFBTestCase(unittest.TestCase):
             os.waitpid(pid, 0)
 
     @contextmanager
-    def assertEventEmitted(self, api: str, event_name: str, timeout_ms: int = 100):
+    def assertEventEmitted(self, api: str, \
+                        event_name: str, \
+                        timeout_ms: int = 100, \
+                        value=_UNSET,
+                        value_lambda=None
+                        ):
         """Helper context manager that allows to easily test that an event has been effectively called"""
         import time
 
         evt_received = False
+        list_data = None
 
         def on_evt(*args):
-            nonlocal evt_received
+            nonlocal evt_received, list_data
             evt_received = True
+            _capsule, _event, _unused, *list_data = args
 
         libafb.evthandler(
             self.binder,
             {"pattern": f"{api}/{event_name}", "callback": on_evt},
         )
+        try:
+            yield
 
-        yield
+            start = time.monotonic()
+            while (time.monotonic() - start) * 1000.0 <= timeout_ms and not evt_received:
+                time.sleep(0.01)
 
-        elapsed = 0
-        while elapsed <= timeout_ms and not evt_received:
-            elapsed += 10
-            time.sleep(0.01)
+            if not evt_received:
+                raise EventAssertionError(f"No event received within {timeout_ms} ms for pattern '{api}/{event_name}'.")
 
-        libafb.evtdelete(self.binder, f"{api}/{event_name}")
 
-        assert evt_received
+            if value is not _UNSET and len(list_data) > 0:
+                got_value = value_lambda(list_data[0]) if value_lambda is not None else list_data[0] 
+
+                self.assertEqual(
+                    got_value,
+                    value,
+                    msg=(
+                        f"Event received but payload value mismatch for pattern '{api}/{event_name}'.\n"
+                        f"Expected value: {value!r}\n"
+                        f"Got value:      {got_value!r}\n"
+                        f"Full payload:   {list_data!r}"
+                    ),
+                )
+
+        finally:
+            libafb.evtdelete(self.binder, f"{api}/{event_name}")
 
 
 class TAPTestResult(unittest.result.TestResult):
