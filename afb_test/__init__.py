@@ -162,7 +162,7 @@ class AFBTestCase(unittest.TestCase):
 
 
             if value is not _UNSET and len(list_data) > 0:
-                got_value = value_lambda(list_data[0]) if value_lambda is not None else list_data[0] 
+                got_value = value_lambda(list_data[0]) if value_lambda is not None else list_data[0]
 
                 self.assertEqual(
                     got_value,
@@ -193,7 +193,7 @@ class TAPTestResult(unittest.result.TestResult):
         self.test_n = 0
 
     def addSuccess(self, test):
-        self.stream.write(f"ok {self.test_n} - {test.shortDescription()}\n")
+        self.stream.write(f"ok {self.test_n} - {test.shortDescription() or test.id()}\n")
         self.stream.flush()
         self.test_n += 1
 
