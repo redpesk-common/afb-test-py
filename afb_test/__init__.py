@@ -11,8 +11,15 @@ import libafb
 
 _binder_config = {}
 _bindings = {}
+_binder_debug = os.environ.get("AFB_TEST_DEBUG", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 _UNSET = object()
+
 
 class EventAssertionError(AssertionError):
     pass
@@ -91,16 +98,25 @@ class AFBTestCase(unittest.TestCase):
         if pid == 0:
             # child
             os.close(pipe_r)
-            _binder = libafb.binder(
-                {
-                    "uid": "py-binder",
-                    "verbose": 255,
-                    "rootdir": ".",
-                    "set": _binder_config or {},
-                    # do not open a listening TCP socket for tests
-                    "port": 0,
-                }
-            )
+            binder_config = {
+                "uid": "py-binder",
+                "verbose": 255,
+                "rootdir": ".",
+                "set": _binder_config or {},
+                # do not open a listening TCP socket for tests
+                "port": 0,
+            }
+
+            if _binder_debug:
+                # Keep the binder alive and let the debugger catch faults.
+                binder_config.update(
+                    {
+                        "timeout": 0,
+                        "trapfaults": False,
+                    }
+                )
+
+            _binder = libafb.binder(binder_config)
 
             for binding_uid, path in _bindings.items():
                 libafb.binding(
@@ -129,12 +145,14 @@ class AFBTestCase(unittest.TestCase):
             os.waitpid(pid, 0)
 
     @contextmanager
-    def assertEventEmitted(self, api: str, \
-                        event_name: str, \
-                        timeout_ms: int = 100, \
-                        value=_UNSET,
-                        value_lambda=None
-                        ):
+    def assertEventEmitted(
+        self,
+        api: str,
+        event_name: str,
+        timeout_ms: int = 100,
+        value=_UNSET,
+        value_lambda=None,
+    ):
         """Helper context manager that allows to easily test that an event has been effectively called"""
         import time
 
@@ -154,15 +172,22 @@ class AFBTestCase(unittest.TestCase):
             yield
 
             start = time.monotonic()
-            while (time.monotonic() - start) * 1000.0 <= timeout_ms and not evt_received:
+            while (
+                time.monotonic() - start
+            ) * 1000.0 <= timeout_ms and not evt_received:
                 time.sleep(0.01)
 
             if not evt_received:
-                raise EventAssertionError(f"No event received within {timeout_ms} ms for pattern '{api}/{event_name}'.")
-
+                raise EventAssertionError(
+                    f"No event received within {timeout_ms} ms for pattern '{api}/{event_name}'."
+                )
 
             if value is not _UNSET and len(list_data) > 0:
-                got_value = value_lambda(list_data[0]) if value_lambda is not None else list_data[0]
+                got_value = (
+                    value_lambda(list_data[0])
+                    if value_lambda is not None
+                    else list_data[0]
+                )
 
                 self.assertEqual(
                     got_value,
@@ -193,7 +218,9 @@ class TAPTestResult(unittest.result.TestResult):
         self.test_n = 0
 
     def addSuccess(self, test):
-        self.stream.write(f"ok {self.test_n} - {test.shortDescription() or test.id()}\n")
+        self.stream.write(
+            f"ok {self.test_n} - {test.shortDescription() or test.id()}\n"
+        )
         self.stream.flush()
         self.test_n += 1
 
@@ -235,9 +262,26 @@ class AFBTestProgram(unittest.TestProgram):
             dest="tap_format",
             help="Use TAP as output format",
         )
+
+        parser.add_argument(
+            "--afb-debug",
+            action="store_true",
+            dest="afb_debug",
+            default=False,
+            help=(
+                "Enable debug-friendly binder settings for tests "
+                "(timeout=0, trapfaults=False). Can also be enabled with "
+                "AFB_TEST_DEBUG=1."
+            ),
+        )
+
         return parser
 
     def runTests(self, skip=True) -> None:
+        global _binder_debug
+
+        _binder_debug = _binder_debug or bool(getattr(self, "afb_debug", False))
+
         if not skip:
             return super().runTests()
 
